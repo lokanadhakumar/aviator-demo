@@ -1,144 +1,421 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Aviator Demo</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<style>
-body {
-  margin:0;
-  background:#0b0f1a;
-  color:#fff;
-  font-family:Arial, sans-serif;
-  overflow:hidden;
-}
-#game {
-  width:100%;
-  height:100vh;
-  text-align:center;
-  position:relative;
-}
-#plane {
-  position:absolute;
-  left:10%;
-  bottom:20%;
-  width:90px;
-  transition: transform 0.08s linear;
-}
-#multiplier {
-  font-size:56px;
-  margin-top:30px;
-}
-.controls {
-  margin-top:20px;
-}
-button {
-  padding:10px 20px;
-  font-size:16px;
-  border:none;
-  border-radius:6px;
-  cursor:pointer;
-}
-#start { background:#00d084; }
-#cash { background:#ff5252; }
-#status { margin-top:10px; opacity:0.9; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Aviator Clone — Play-Money (Upgraded)</title>
+  <meta name="description" content="Play-money Aviator clone — provably-fair demo, optional Firebase multiplayer, PWA-ready." />
+  <style>
+    :root{--bg1:#05031a;--accent:#ff6b6b;--accent2:#7efcff}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Arial,sans-serif;background:linear-gradient(180deg,var(--bg1),#06010a);color:#fff}
+    .wrap{width:100%;max-width:1000px;margin:0 auto;padding:18px}
+    h1{margin:6px 0 12px}
+    .stage{position:relative;height:60vh;border-radius:18px;background:radial-gradient(circle at 20% 20%, rgba(255,255,255,0.02), transparent 12%), linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.25));overflow:hidden;border:1px solid rgba(255,255,255,0.04)}
+    canvas.bg{position:absolute;inset:0;z-index:1}
+    #plane{position:absolute;left:10%;bottom:10%;width:96px;transform-origin:center;z-index:6;will-change:transform,opacity}
+    .trail-dot{position:absolute;width:12px;height:12px;border-radius:50%;filter:blur(6px);opacity:0.9;z-index:4;pointer-events:none}
+    .hud{position:absolute;left:16px;top:14px;z-index:10}
+    .mult{font-weight:800;font-size:56px;color:var(--accent);text-shadow:0 8px 30px rgba(255,107,107,0.18);transition:transform .12s ease}
+    .sub{opacity:0.75;font-size:13px}
+    .controls{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:18px}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.03)}
+    .bet-input{width:120px;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:#fff}
+    .btn{padding:10px 16px;border-radius:10px;border:none;cursor:pointer;font-weight:700}
+    .btn-play{background:linear-gradient(90deg,var(--accent),#ff9a9a);color:#111}
+    .btn-cash{background:linear-gradient(90deg,#4ef08a,#00c853);color:#011}
+    .panel{display:flex;justify-content:space-between;gap:12px;margin-top:16px}
+    .pf{font-size:12px;padding:10px;border-radius:8px;background:rgba(0,0,0,0.45);border:1px solid rgba(255,255,255,0.03);max-width:100%}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,"Roboto Mono",monospace}
+    @media (max-width:600px){.mult{font-size:36px}.stage{height:52vh}#plane{width:64px}}
+    .hidden{display:none}
+    .center{text-align:center}
+    .leader{display:flex;flex-direction:column;gap:6px}
+    .leader-row{display:flex;justify-content:space-between;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,0.02)}
+    .hint{font-size:12px;opacity:0.8;margin-top:14px}
+    body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+    .mult{transition:color .15s ease, transform .12s ease}
+    .trail-dot{transition:opacity .6s ease, transform .6s ease}
+    /* small reset button */
+    #resetBalance{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:6px 8px;border-radius:6px;color:#fff;cursor:pointer}
+  </style>
 </head>
-
 <body>
+  <div class="wrap">
+    <h1>Aviator Clone — Play-Money (Upgraded)</h1>
 
-<div id="game">
-  <h2 id="playerName"></h2>
-  <div id="multiplier">1.00x</div>
+    <div class="stage" id="stage">
+      <canvas id="bg" class="bg"></canvas>
 
-  <img id="plane" src="https://i.imgur.com/6XH6QkL.png">
+      <!-- Inline SVG plane (reliable, no external links) -->
+      <svg id="plane" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="96" style="filter:drop-shadow(0 6px 8px rgba(0,0,0,0.6));">
+        <path fill="#ff6b6b" d="M2 30 L62 6 L46 34 L62 46 L22 36 L2 30 Z"/>
+      </svg>
 
-  <div class="controls">
-    <button id="start">Start</button>
-    <button id="cash">Cash Out</button>
+      <div id="trailRoot"></div>
+
+      <div class="hud">
+        <div class="mult" id="mult">1.00x</div>
+        <div class="sub">Round: <span id="roundNum">0</span> • Status: <span id="status">idle</span></div>
+      </div>
+
+      <!-- Provably-fair panel -->
+      <div style="position:absolute;right:12px;top:12px;z-index:11;max-width:360px">
+        <div class="pf">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <div style="font-size:13px">Provably-fair (demo)</div>
+            <button id="regenClient" class="btn" style="padding:6px 10px">New ClientSeed</button>
+          </div>
+          <div style="margin-top:8px" class="mono"><strong>ClientSeed:</strong><div id="clientSeed" style="word-break:break-all"></div></div>
+          <div style="margin-top:6px" class="mono"><strong>Server Precommit (SHA256):</strong><div id="serverCommit" style="word-break:break-all"></div></div>
+          <div style="margin-top:6px" class="mono"><strong>Last Round Hash:</strong><div id="lastHash" style="word-break:break-all"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <div class="card">
+        <div style="font-size:13px">Balance</div>
+        <div style="font-weight:800;font-size:20px" id="balance">1000</div>
+        <div style="margin-top:6px"><button id="resetBalance">Reset Balance</button></div>
+      </div>
+
+      <div class="card">
+        <div style="font-size:13px">Bet amount</div>
+        <input id="betAmount" class="bet-input" type="number" value="10" min="1" />
+      </div>
+
+      <div class="card">
+        <div style="font-size:13px">Auto Cashout (x)</div>
+        <input id="autoCash" class="bet-input" type="number" placeholder="e.g. 2" />
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="startBtn" class="btn btn-play">Start Round</button>
+        <button id="cashBtn" class="btn btn-cash hidden">Cash Out</button>
+      </div>
+
+      <div class="card small">
+        <div>Mode: <strong>Play-money • Anonymous</strong></div>
+        <div style="margin-top:6px">Multiplayer: <span id="mpStatus">Off</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="card pf" style="flex:1">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:13px;opacity:0.9">Round history (last 6)</div>
+          <div style="font-size:13px;opacity:0.9">Round #: <span id="roundCounter">0</span></div>
+        </div>
+        <div id="history" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+
+      <div class="card" style="width:260px">
+        <div style="font-size:13px;opacity:0.9">Leaderboard (Top wins)</div>
+        <div id="leader" class="leader" style="margin-top:8px"></div>
+      </div>
+    </div>
+
+    <div class="hint">Note: This is a <strong>play-money</strong> demo. Multiplayer & leaderboard are optional via Firebase (free tier). To make this PWA add the manifest & service-worker files as explained below.</div>
+
+    <!-- Firebase config placeholder (paste your config here if you want multiplayer) -->
+    <div id="firebasePlaceholder" style="display:none"></div>
   </div>
 
-  <p id="status"></p>
-</div>
+  <script>
+    /* ===== Utilities ===== */
+    async function sha256Hex(str){
+      const enc = new TextEncoder();
+      const data = enc.encode(str);
+      const hash = await crypto.subtle.digest('SHA-256', data);
+      return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
+    }
 
-<script>
-/* ===============================
-   PLAYER NAME
-================================*/
-let playerName = localStorage.getItem("playerName");
-if (!playerName) {
-  playerName = prompt("Enter your name:");
-  localStorage.setItem("playerName", playerName);
-}
-document.getElementById("playerName").innerText = "Player: " + playerName;
+    /* ===== State & UI refs ===== */
+    const state = {
+      balance: (function(){ const saved = localStorage.getItem('avi_balance'); if(saved===null || Number(saved)===0) return 1000; return Number(saved); })(),
+      clientSeed: localStorage.getItem('avi_client') || ('client_' + Math.random().toString(36).slice(2,12)),
+      serverSeed: null,
+      serverCommit: localStorage.getItem('avi_server_commit') || null,
+      round: 0,
+      running: false,
+      trailOn: true,
+      history: JSON.parse(localStorage.getItem('avi_history')||'[]'),
+      leaderboardEnabled: false,
+      firebaseApp: null
+    };
 
-/* ===============================
-   GAME STATE
-================================*/
-let multiplier = 1;
-let crashPoint = 0;
-let running = false;
-let interval = null;
+    const multEl = document.getElementById('mult');
+    const statusEl = document.getElementById('status');
+    const balanceEl = document.getElementById('balance');
+    const betInput = document.getElementById('betAmount');
+    const startBtn = document.getElementById('startBtn');
+    const cashBtn = document.getElementById('cashBtn');
+    const autoCash = document.getElementById('autoCash');
+    const clientSeedEl = document.getElementById('clientSeed');
+    const serverCommitEl = document.getElementById('serverCommit');
+    const lastHashEl = document.getElementById('lastHash');
+    const roundNumEl = document.getElementById('roundNum');
+    const historyEl = document.getElementById('history');
+    const roundCounterEl = document.getElementById('roundCounter');
+    const mpStatusEl = document.getElementById('mpStatus');
+    const leaderEl = document.getElementById('leader');
 
-/* ===============================
-   RANDOM CRASH LOGIC
-================================*/
-function getCrashPoint() {
-  const r = Math.random();
-  if (r < 0.04) return rand(50, 1000);
-  if (r < 0.15) return rand(10, 50);
-  if (r < 0.40) return rand(2, 10);
-  return rand(1.05, 2);
-}
-function rand(min, max) {
-  return +(Math.random() * (max - min) + min).toFixed(2);
-}
+    function renderState(){
+      balanceEl.textContent = state.balance.toFixed(2);
+      clientSeedEl.textContent = state.clientSeed;
+      serverCommitEl.textContent = state.serverCommit || '(server commit will be created each round)';
+      roundNumEl.textContent = state.round;
+      roundCounterEl.textContent = state.round;
+      historyEl.innerHTML='';
+      state.history.slice().reverse().slice(0,6).forEach(r=>{
+        const el=document.createElement('div'); el.style.padding='6px 8px'; el.style.borderRadius='8px'; el.className='mono'; el.style.background='rgba(255,255,255,0.02)'; el.style.fontSize='13px';
+        el.textContent=`#${r.round} ${r.mult}x (${r.result})`;
+        historyEl.appendChild(el);
+      });
+      lastHashEl.textContent = state.lastHash || '';
+      renderLeaderboard();
+    }
 
-/* ===============================
-   GAME LOOP
-================================*/
-function startGame() {
-  if (running) return;
-  running = true;
-  multiplier = 1;
-  crashPoint = getCrashPoint();
-  document.getElementById("status").innerText = "Flying...";
-  runLoop();
-}
+    function renderLeaderboard(){
+      leaderEl.innerHTML='';
+      const top = JSON.parse(localStorage.getItem('avi_leader')||'[]').slice(0,8);
+      top.forEach(item=>{
+        const row=document.createElement('div'); row.className='leader-row';
+        row.innerHTML = `<div style="font-weight:700">${item.name}</div><div>${item.win}</div>`;
+        leaderEl.appendChild(row);
+      });
+    }
 
-function runLoop() {
-  interval = setInterval(() => {
-    multiplier += multiplier * 0.018;
-    document.getElementById("multiplier").innerText =
-      multiplier.toFixed(2) + "x";
+    renderState();
 
-    document.getElementById("plane").style.transform =
-      `translateX(${multiplier * 6}px) rotate(${multiplier * 2}deg)`;
+    /* ===== Background stars canvas ===== */
+    const bg = document.getElementById('bg'); const stage = document.getElementById('stage');
+    function resizeBg(){ bg.width = stage.clientWidth; bg.height = stage.clientHeight; drawBg(); }
+    window.addEventListener('resize', resizeBg);
+    function drawBg(){ const ctx = bg.getContext('2d'); ctx.clearRect(0,0,bg.width,bg.height); for(let i=0;i<140;i++){ ctx.fillStyle = `rgba(255,255,255,${Math.random()*0.12})`; ctx.fillRect(Math.random()*bg.width, Math.random()*bg.height, Math.random()*2, Math.random()*2); } }
+    resizeBg();
 
-    if (multiplier >= crashPoint) crash();
-  }, 60);
-}
+    /* ===== Provably-fair helpers (demo) ===== */
+    async function precommitServerSeed(){
+      state.serverSeed = 'srv_' + Math.random().toString(36).repeat(6).slice(2,60);
+      state.serverCommit = await sha256Hex(state.serverSeed);
+      localStorage.setItem('avi_server_commit', state.serverCommit);
+      serverCommitEl.textContent = state.serverCommit;
+    }
+    async function deriveRoundHash(nonce){
+      const s = state.serverSeed + '|' + state.clientSeed + '|' + nonce;
+      return await sha256Hex(s);
+    }
+    function first52IntFromHash(hex){
+      const first13 = hex.slice(0,13);
+      return parseInt(first13,16);
+    }
+    function mapHtoMultiplier(H){
+      const D = Math.pow(2,52);
+      const fraction = H / D;
+      const val = 1 / (1 - fraction);
+      const scaled = Math.floor(val * 100);
+      return (scaled/100);
+    }
 
-function crash() {
-  clearInterval(interval);
-  document.getElementById("status").innerText =
-    "💥 Crashed at " + multiplier.toFixed(2) + "x";
-  running = false;
-}
+    /* ===== Engine ===== */
+    let engineInterval = null;
+    let current = {mult:1, crashAt:0, bet:0, cashed:false, nonce:0, hash:'', H:0};
 
-function cashOut() {
-  if (!running) return;
-  document.getElementById("status").innerText =
-    "Cashed out at " + multiplier.toFixed(2) + "x";
-}
+    async function startRound(){
+      if(state.running) return;
+      const bet = parseFloat(betInput.value) || 1;
+      if(bet<=0 || bet>state.balance){ alert('Invalid bet or insufficient balance'); return; }
 
-/* ===============================
-   BUTTONS
-================================*/
-document.getElementById("start").onclick = startGame;
-document.getElementById("cash").onclick = cashOut;
-</script>
+      // precommit
+      await precommitServerSeed();
 
+      state.round += 1;
+      state.running = true;
+      current.bet = bet; current.cashed=false; current.mult=1; current.nonce = state.round;
+      state.balance -= bet;
+      renderState();
+
+      // derive hash + mapping (demo)
+      const roundHash = await deriveRoundHash(current.nonce);
+      current.hash = roundHash; current.H = first52IntFromHash(roundHash);
+      current.crashAt = mapHtoMultiplier(current.H);
+      state.lastHash = roundHash;
+      renderState();
+
+      // play start sound
+      playSound('start');
+
+      document.getElementById('status').textContent = 'running'; startBtn.disabled=true; startBtn.classList.add('hidden'); cashBtn.classList.remove('hidden');
+
+      engineInterval = setInterval(()=>{
+        current.mult += current.mult*0.018; // growth
+        multEl.textContent = current.mult.toFixed(2) + 'x';
+        animatePlane(current.mult);
+        maybeDropTrail();
+        const auto = parseFloat(autoCash.value);
+        if(auto && current.mult>=auto && !current.cashed){ doCashout(); }
+        if(current.mult >= current.crashAt){
+          clearInterval(engineInterval); state.running=false; engineInterval=null;
+          multEl.textContent = current.mult.toFixed(2) + 'x 💥';
+          document.getElementById('status').textContent='crashed';
+          cashBtn.classList.add('hidden'); startBtn.disabled=false; startBtn.classList.remove('hidden');
+          playSound('crash'); recordRound('crash');
+        }
+      },60);
+    }
+
+    function doCashout(){
+      if(!state.running || current.cashed) return;
+      current.cashed = true; clearInterval(engineInterval); state.running=false; engineInterval=null;
+      const payout = +(current.bet * current.mult).toFixed(2);
+      state.balance += payout;
+      multEl.textContent = current.mult.toFixed(2) + 'x (Cashed)';
+      document.getElementById('status').textContent='cashed out';
+      cashBtn.classList.add('hidden'); startBtn.disabled=false; startBtn.classList.remove('hidden');
+      playSound('cash'); recordRound('cash'); maybeSubmitLeaderboard(payout);
+    }
+
+    function recordRound(result){
+      const r={round:state.round,mult:current.crashAt.toFixed(2),result,hash:current.hash};
+      state.history.push(r); if(state.history.length>200) state.history.shift();
+      localStorage.setItem('avi_history', JSON.stringify(state.history));
+      localStorage.setItem('avi_balance', state.balance);
+      renderState();
+    }
+
+    /* ===== UI wiring ===== */
+    startBtn.addEventListener('click', startRound);
+    cashBtn.addEventListener('click', doCashout);
+    document.getElementById('regenClient').addEventListener('click', ()=>{ state.clientSeed = 'client_'+Math.random().toString(36).slice(2,12); localStorage.setItem('avi_client', state.clientSeed); renderState(); });
+    document.getElementById('resetBalance').addEventListener('click', ()=>{ state.balance=1000; localStorage.setItem('avi_balance', state.balance); renderState(); });
+
+    /* ===== Plane animation ===== */
+    const planeEl = document.getElementById('plane');
+    function animatePlane(mult){
+      const px = Math.min(75, 10 + mult*6); // percent from left
+      const py = Math.min(85, 10 + mult*4); // percent from bottom
+      const rot = Math.min(55, mult*2.5);
+      planeEl.style.transform = `translate(${px}%, -${py}%) rotate(${rot}deg) scale(${1 + Math.min(0.8, mult/120)})`;
+      multEl.style.transform = `scale(${1 + Math.min(0.06, mult/500)})`;
+    }
+
+    /* ===== Trail visuals ===== */
+    const trailRoot = document.getElementById('trailRoot');
+    function maybeDropTrail(){
+      if(!state.trailOn) return;
+      const d=document.createElement('div'); d.className='trail-dot';
+      d.style.left=(8 + Math.random()*10)+'%';
+      d.style.bottom=(8 + current.mult*2.8)+'%';
+      d.style.background='radial-gradient(circle, rgba(255,200,120,0.95), rgba(255,40,40,0.06))';
+      trailRoot.appendChild(d);
+      setTimeout(()=>{ d.style.opacity='0'; d.style.transform='scale(1.6)'; },60);
+      setTimeout(()=>d.remove(),1400);
+    }
+
+    /* ===== Sounds (WebAudio) ===== */
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playTone(freq, time=0.08, type='sine', gain=0.12){
+      try{
+        const o=audioCtx.createOscillator(); const g=audioCtx.createGain();
+        o.type=type; o.frequency.value=freq; g.gain.value=gain;
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(); g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + time);
+        setTimeout(()=>o.stop(), time*1000 + 20);
+      }catch(e){console.warn('audio',e)}
+    }
+    function playSound(name){
+      try{ if(audioCtx.state==='suspended') audioCtx.resume();
+        if(name==='start'){ playTone(880,0.06,'sine',0.06); playTone(440,0.12,'sine',0.05); }
+        else if(name==='cash'){ playTone(1100,0.06,'square',0.08); playTone(880,0.12,'sine',0.05); }
+        else if(name==='crash'){ playTone(160,0.25,'sawtooth',0.16); playTone(80,0.35,'sine',0.05); }
+      }catch(e){console.warn('audio error',e);}
+    }
+
+    /* ===== Leaderboard (local + optional Firebase) ===== */
+    function maybeSubmitLeaderboard(win){
+      if(!win || win<=0) return;
+      const name = prompt('Enter display name for leaderboard (optional)') || 'anon';
+      const entry = {name, win};
+      const lb = JSON.parse(localStorage.getItem('avi_leader')||'[]');
+      lb.push(entry); lb.sort((a,b)=>b.win - a.win);
+      localStorage.setItem('avi_leader', JSON.stringify(lb.slice(0,50)));
+      renderLeaderboard();
+      if(state.leaderboardEnabled && state.firebaseApp){ submitToFirebaseLeaderboard(entry); }
+    }
+
+    /* ===== Firebase hooks (optional) ===== */
+    // Paste your Firebase config object here to enable cloud features
+    const FIREBASE_CONFIG = null; // e.g. { apiKey: "...", authDomain: "...", databaseURL: "...", projectId: "...", storageBucket: "...", messagingSenderId: "...", appId: "..." }
+
+    async function loadFirebaseAndInit(){
+      if(!FIREBASE_CONFIG) return;
+      await loadScript('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
+      await loadScript('https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js');
+      state.firebaseApp = window.firebase.initializeApp(FIREBASE_CONFIG);
+      state.db = firebase.database();
+      state.leaderboardEnabled = true; mpStatusEl.textContent='On (Firebase)';
+      state.db.ref('latestRound').on('value', snap=>{
+        const val = snap.val();
+        if(val){
+          // apply reveal if published
+          state.serverCommit = val.commit; serverCommitEl.textContent = state.serverCommit;
+          if(val.revealed){
+            state.lastHash = val.hash; state.serverSeed = val.serverSeed; state.round = val.nonce;
+            state.history.push({round:val.nonce,mult:val.crashAt,result:'sync',hash:val.hash});
+            localStorage.setItem('avi_history', JSON.stringify(state.history)); renderState();
+          }
+        }
+      });
+    }
+
+    function loadScript(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); }
+    async function submitToFirebaseLeaderboard(entry){ if(!state.db) return; const ref = state.db.ref('leaderboard'); await ref.push(entry); }
+    async function publishRoundToFirebase(obj){ if(!state.db) return; await state.db.ref('latestRound').set(obj); }
+
+    if(FIREBASE_CONFIG){ loadFirebaseAndInit(); }
+
+    /* ===== Initial precommit ===== */
+    (async()=>{ if(!state.serverCommit) await precommitServerSeed(); renderState(); })();
+
+    /* ===== PWA service-worker registration (tries to register /aviator-demo/service-worker.js) ===== */
+    if('serviceWorker' in navigator){
+      window.addEventListener('load', ()=>{
+        const base = window.location.pathname.replace(/\/$/, '');
+        // Note: adjust path if your repo is not under /aviator-demo/
+        navigator.serviceWorker.register(base + '/service-worker.js').then(()=>console.log('SW registered')).catch(e=>console.warn('SW failed',e));
+      });
+    }
+  </script>
+
+  <!-- PWA install hint (will show if browser supports beforeinstallprompt) -->
+  <script>
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const b = document.createElement('button');
+      b.textContent = 'Install App';
+      b.style.position = 'fixed'; b.style.bottom='18px'; b.style.right='18px'; b.style.zIndex=9999; b.style.padding='10px 12px'; b.style.borderRadius='10px'; b.style.border='none'; b.style.background='#ff6b6b'; b.style.color='#111';
+      b.onclick = async () => {
+        b.remove();
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        console.log('Install outcome', outcome);
+        deferredPrompt = null;
+      };
+      document.body.appendChild(b);
+    });
+  </script>
+
+  <!--
+    Deployment notes (quick):
+    1) Commit this index.html to your repo root.
+    2) Optionally add manifest.webmanifest and service-worker.js (examples provided earlier).
+    3) If using Firebase, paste the config into FIREBASE_CONFIG variable.
+    4) Enable GitHub Pages (main branch, root). Wait ~30-60s for publishing.
+  -->
 </body>
 </html>
